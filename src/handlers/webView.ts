@@ -1,12 +1,18 @@
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 import { RateLimitData } from '../interfaces/types';
 import { getRateLimitData, formatTokenUsage } from '../services/ratelimitParser';
 import { log } from '../services/logger';
+import { sanitizeColor } from '../utils/sanitize';
+
+const WARNING_COLOR_FALLBACK = '#f3d898';
+const CRITICAL_COLOR_FALLBACK = '#eca7a7';
 
 export class RateLimitWebView {
   public static currentPanel: RateLimitWebView | undefined;
   private readonly _panel: vscode.WebviewPanel;
   private readonly _extensionUri: vscode.Uri;
+  private readonly _nonce: string;
   private _disposables: vscode.Disposable[] = [];
 
   public static createOrShow(extensionUri: vscode.Uri) {
@@ -42,6 +48,7 @@ export class RateLimitWebView {
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     this._panel = panel;
     this._extensionUri = extensionUri;
+    this._nonce = RateLimitWebView._generateNonce();
 
     // Set the webview's initial html content
     this._update();
@@ -106,24 +113,30 @@ export class RateLimitWebView {
 
   private _getHtml(webview: vscode.Webview, data: RateLimitData): string {
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'styles.css'));
+    const nonce = this._nonce;
+    const widthRules: string[] = [];
+    const progressSection = this._renderProgressSection(data, widthRules);
+    const csp = this._buildCsp(webview, nonce);
     const config = vscode.workspace.getConfiguration('codexRatelimit');
-    const warningColor = config.get<string>('color.warningColor', '#f3d898');
-    const criticalColor = config.get<string>('color.criticalColor', '#eca7a7');
+    const warningColor = sanitizeColor(config.get<string>('color.warningColor', WARNING_COLOR_FALLBACK), WARNING_COLOR_FALLBACK);
+    const criticalColor = sanitizeColor(config.get<string>('color.criticalColor', CRITICAL_COLOR_FALLBACK), CRITICAL_COLOR_FALLBACK);
 
     return `<!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta http-equiv="Content-Security-Policy" content="${csp}">
       <title>Codex Rate Limit Details</title>
       <link href="${styleUri}" rel="stylesheet">
-      <style>
+      <style nonce="${nonce}">
         .progress-fill.usage.medium {
           background-color: ${warningColor} !important;
         }
         .progress-fill.usage.high {
           background-color: ${criticalColor} !important;
         }
+        ${widthRules.join('\n')}
       </style>
     </head>
     <body>
@@ -132,7 +145,7 @@ export class RateLimitWebView {
           CODEX RATELIMIT - LIVE USAGE MONITOR
         </div>
 
-        ${this._renderProgressSection(data)}
+        ${progressSection}
 
         <div class="token-usage">
           <h3>📊 Token Usage Summary</h3>
@@ -142,24 +155,25 @@ export class RateLimitWebView {
 
         <div class="refresh-info">
           Last updated: ${data.current_time.toLocaleString()}<br>
-          <button onclick="refresh()" style="margin-top: 10px; padding: 5px 10px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 3px; cursor: pointer;">
+          <button id="refreshButton" class="action-button">
             🔄 Refresh
           </button>
         </div>
       </div>
 
-      <script>
+      <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
 
-        function refresh() {
+        const refreshButton = document.getElementById('refreshButton');
+        refreshButton?.addEventListener('click', () => {
           vscode.postMessage({ command: 'refresh' });
-        }
+        });
       </script>
     </body>
     </html>`;
   }
 
-  private _renderProgressSection(data: RateLimitData): string {
+  private _renderProgressSection(data: RateLimitData, widthRules: string[]): string {
     let html = '';
 
     // 5-Hour Session
@@ -167,10 +181,12 @@ export class RateLimitWebView {
       const primary = data.primary;
       const resetTimeStr = primary.reset_time.toLocaleString();
       const outdatedStr = primary.outdated ? ' [OUTDATED]' : '';
-      const timePercent = primary.outdated ? 0 : primary.time_percent;
-      const usagePercent = primary.outdated ? 0 : primary.used_percent;
-      const timeText = primary.outdated ? 'N/A' : primary.time_percent.toFixed(1) + '%';
-      const usageText = primary.outdated ? 'N/A' : primary.used_percent.toFixed(1) + '%';
+      const timePercent = this._getDisplayPercentage(primary.time_percent, primary.outdated);
+      const usagePercent = this._getDisplayPercentage(primary.used_percent, primary.outdated);
+      const timeText = primary.outdated ? 'N/A' : timePercent.toFixed(1) + '%';
+      const usageText = primary.outdated ? 'N/A' : usagePercent.toFixed(1) + '%';
+      widthRules.push(`#primary-time-fill { width: ${timePercent}%; }`);
+      widthRules.push(`#primary-usage-fill { width: ${usagePercent}%; }`);
 
       html += `
         <div class="progress-section">
@@ -179,8 +195,7 @@ export class RateLimitWebView {
             <div class="progress-bar">
               <div class="progress-label">SESSION TIME</div>
               <div class="progress-track">
-                <div class="progress-fill time ${this._getProgressClass(timePercent, primary.outdated)}"
-                     style="width: ${timePercent}%"></div>
+                <div class="progress-fill time ${this._getProgressClass(timePercent, primary.outdated)}" id="primary-time-fill"></div>
               </div>
               <div class="progress-percentage">${timeText}</div>
             </div>
@@ -189,8 +204,7 @@ export class RateLimitWebView {
             <div class="progress-bar">
               <div class="progress-label">5H USAGE</div>
               <div class="progress-track">
-                <div class="progress-fill usage ${this._getUsageClass(usagePercent, primary.outdated)}"
-                     style="width: ${usagePercent}%"></div>
+                <div class="progress-fill usage ${this._getUsageClass(usagePercent, primary.outdated)}" id="primary-usage-fill"></div>
               </div>
               <div class="progress-percentage">${usageText}</div>
             </div>
@@ -204,10 +218,12 @@ export class RateLimitWebView {
       const secondary = data.secondary;
       const resetTimeStr = secondary.reset_time.toLocaleString();
       const outdatedStr = secondary.outdated ? ' [OUTDATED]' : '';
-      const timePercent = secondary.outdated ? 0 : secondary.time_percent;
-      const usagePercent = secondary.outdated ? 0 : secondary.used_percent;
-      const timeText = secondary.outdated ? 'N/A' : secondary.time_percent.toFixed(1) + '%';
-      const usageText = secondary.outdated ? 'N/A' : secondary.used_percent.toFixed(1) + '%';
+      const timePercent = this._getDisplayPercentage(secondary.time_percent, secondary.outdated);
+      const usagePercent = this._getDisplayPercentage(secondary.used_percent, secondary.outdated);
+      const timeText = secondary.outdated ? 'N/A' : timePercent.toFixed(1) + '%';
+      const usageText = secondary.outdated ? 'N/A' : usagePercent.toFixed(1) + '%';
+      widthRules.push(`#secondary-time-fill { width: ${timePercent}%; }`);
+      widthRules.push(`#secondary-usage-fill { width: ${usagePercent}%; }`);
 
       html += `
         <div class="progress-section">
@@ -216,8 +232,7 @@ export class RateLimitWebView {
             <div class="progress-bar">
               <div class="progress-label">WEEKLY TIME</div>
               <div class="progress-track">
-                <div class="progress-fill time ${this._getProgressClass(timePercent, secondary.outdated)}"
-                     style="width: ${timePercent}%"></div>
+                <div class="progress-fill time ${this._getProgressClass(timePercent, secondary.outdated)}" id="secondary-time-fill"></div>
               </div>
               <div class="progress-percentage">${timeText}</div>
             </div>
@@ -226,8 +241,7 @@ export class RateLimitWebView {
             <div class="progress-bar">
               <div class="progress-label">WEEKLY USAGE</div>
               <div class="progress-track">
-                <div class="progress-fill usage ${this._getUsageClass(usagePercent, secondary.outdated)}"
-                     style="width: ${usagePercent}%"></div>
+                <div class="progress-fill usage ${this._getUsageClass(usagePercent, secondary.outdated)}" id="secondary-usage-fill"></div>
               </div>
               <div class="progress-percentage">${usageText}</div>
             </div>
@@ -264,14 +278,41 @@ export class RateLimitWebView {
     }
   }
 
+  private _clampPercentage(value: number): number {
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    return Math.max(0, Math.min(100, value));
+  }
+
+  private _getDisplayPercentage(value: number, outdated: boolean): number {
+    if (outdated) {
+      return 0;
+    }
+    return this._clampPercentage(value);
+  }
+
+  private _buildCsp(webview: vscode.Webview, nonce: string): string {
+    return [
+      "default-src 'none';",
+      `img-src ${webview.cspSource};`,
+      `style-src ${webview.cspSource} 'nonce-${nonce}';`,
+      `script-src 'nonce-${nonce}';`
+    ].join(' ');
+  }
+
   private _getErrorHtml(errorMessage: string): string {
     const styleUri = this._panel.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'styles.css'));
+    const nonce = this._nonce;
+    const csp = this._buildCsp(this._panel.webview, nonce);
+    const safeErrorMessage = this._escapeHtml(errorMessage);
 
     return `<!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta http-equiv="Content-Security-Policy" content="${csp}">
       <title>Codex Rate Limit Details - Error</title>
       <link href="${styleUri}" rel="stylesheet">
     </head>
@@ -279,21 +320,45 @@ export class RateLimitWebView {
       <div class="container">
         <div class="error-state">
           <h2>⚠️ Error</h2>
-          <p>${errorMessage}</p>
-          <button onclick="refresh()" style="margin-top: 10px; padding: 5px 10px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 3px; cursor: pointer;">
+          <p>${safeErrorMessage}</p>
+          <button id="errorRefreshButton" class="action-button">
             🔄 Try Again
           </button>
         </div>
       </div>
 
-      <script>
+      <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
 
-        function refresh() {
+        const errorRefreshButton = document.getElementById('errorRefreshButton');
+        errorRefreshButton?.addEventListener('click', () => {
           vscode.postMessage({ command: 'refresh' });
-        }
+        });
       </script>
     </body>
     </html>`;
+  }
+
+  private _escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, (char) => {
+      switch (char) {
+        case '&':
+          return '&amp;';
+        case '<':
+          return '&lt;';
+        case '>':
+          return '&gt;';
+        case '"':
+          return '&quot;';
+        case '\'':
+          return '&#39;';
+        default:
+          return char;
+      }
+    });
+  }
+
+  private static _generateNonce(): string {
+    return crypto.randomBytes(16).toString('hex');
   }
 }
