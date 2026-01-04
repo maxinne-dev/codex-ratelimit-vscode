@@ -64,12 +64,13 @@ After installation, reload VSCode window (`Ctrl+Shift+P` → "Developer: Reload 
 The extension displays rate limit information in the VSCode status bar:
 
 ```
-⚡ 5H: 45% | Weekly: 23%
+<img src="media/codex-icon-light.svg" width="16" height="16" /> 5H: 45% | Weekly: 23%
 ```
 
 - **5H**: 5-hour session usage percentage
 - **Weekly**: Weekly limit usage percentage
 - Colors change based on usage levels (green → yellow → red)
+- You can toggle the icon or add the "Codex" label in the status bar via settings.
 
 ### Detailed View
 
@@ -95,8 +96,12 @@ Prefer a terminal workflow? The [codex-ratelimit](https://github.com/xiangz19/co
 The extension can be configured through VSCode settings:
 
 - `codexRatelimit.enableLogging` - Enable detailed logging for debugging
-- `codexRatelimit.enableStatusBarColors` - Enable color-coded status bar
-- `codexRatelimit.warningThreshold` - Usage percentage for warning colors (default: 70%)
+- `codexRatelimit.showOutputOnError` - Show the output panel when an error is logged
+- `codexRatelimit.color.enable` - Enable color-coded status bar text
+- `codexRatelimit.color.warningThreshold` / `codexRatelimit.color.warningColor` - Warning threshold and color
+- `codexRatelimit.color.criticalThreshold` / `codexRatelimit.color.criticalColor` - Critical threshold and color
+- `codexRatelimit.statusBar.showIcon` - Show the Codex icon in the status bar
+- `codexRatelimit.statusBar.showLabel` - Show the "Codex" label next to the icon
 - `codexRatelimit.refreshInterval` - How often to refresh stats in seconds (5-3600, default: 10)
 - `codexRatelimit.sessionPath` - Custom path to Codex sessions directory
 

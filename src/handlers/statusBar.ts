@@ -79,6 +79,24 @@ function createProgressBar(percentage: number, type: 'usage' | 'time', outdated:
   return `<img src="data:image/svg+xml;base64,${encodedSvg}" alt="Progress: ${percentage.toFixed(1)}%" style="vertical-align: middle;"/>`;
 }
 
+function buildStatusBarPrefix(): string {
+  const config = vscode.workspace.getConfiguration('codexRatelimit');
+  const showIcon = config.get<boolean>('statusBar.showIcon', true);
+  const showLabel = config.get<boolean>('statusBar.showLabel', false);
+
+  const parts: string[] = [];
+
+  if (showIcon) {
+    parts.push('$(codex)');
+  }
+
+  if (showLabel) {
+    parts.push('Codex');
+  }
+
+  return parts.join(' ');
+}
+
 export function createMarkdownTooltip(data: RateLimitData): vscode.MarkdownString {
   const tooltip = new vscode.MarkdownString();
   tooltip.isTrusted = true;
@@ -200,7 +218,10 @@ export function updateStatusBar(data: RateLimitData): void {
     const primaryText = data.primary ? `${Math.round(primaryUsage)}%` : 'N/A';
     const weeklyText = data.secondary ? `${Math.round(weeklyUsage)}%` : 'N/A';
 
-    statusBarItem.text = `⚡ 5H: ${primaryText} | Weekly: ${weeklyText}`;
+    const prefix = buildStatusBarPrefix();
+    const prefixWithSpace = prefix ? `${prefix} ` : '';
+
+    statusBarItem.text = `${prefixWithSpace}5H: ${primaryText} | Weekly: ${weeklyText}`;
     statusBarItem.color = getStatusBarColor(maxUsagePercent);
     statusBarItem.tooltip = createMarkdownTooltip(data);
     statusBarItem.show();
@@ -210,7 +231,10 @@ export function updateStatusBar(data: RateLimitData): void {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log(`Error updating status bar: ${errorMessage}`, true);
 
-    statusBarItem.text = '⚡ Codex: Error';
+    const prefix = buildStatusBarPrefix();
+    const prefixWithSpace = prefix ? `${prefix} ` : '';
+
+    statusBarItem.text = `${prefixWithSpace}${prefix ? 'Error' : 'Codex: Error'}`;
     statusBarItem.color = new vscode.ThemeColor('statusBarItem.errorBackground');
     statusBarItem.tooltip = new vscode.MarkdownString('⚠️ Error updating rate limit data');
     statusBarItem.show();
@@ -222,7 +246,10 @@ export function showErrorState(message: string): void {
     return;
   }
 
-  statusBarItem.text = '⚡ Codex: Error';
+  const prefix = buildStatusBarPrefix();
+  const prefixWithSpace = prefix ? `${prefix} ` : '';
+
+  statusBarItem.text = `${prefixWithSpace}${prefix ? 'Error' : 'Codex: Error'}`;
   statusBarItem.color = new vscode.ThemeColor('statusBarItem.errorBackground');
   statusBarItem.tooltip = new vscode.MarkdownString(`⚠️ ${message}`);
   statusBarItem.show();
