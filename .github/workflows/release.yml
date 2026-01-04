@@ -29,7 +29,7 @@ jobs:
 
       - name: Determine extension version
         id: version
-        run: echo "value=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+        run: echo "value=$(node -p \\"require('./package.json').version\\")" >> "$GITHUB_OUTPUT"
 
       - name: Check if tag exists
         id: tag_check
