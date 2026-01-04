@@ -5,6 +5,9 @@ import { getRateLimitData, formatTokenUsage } from '../services/ratelimitParser'
 import { log } from '../services/logger';
 import { sanitizeColor } from '../utils/sanitize';
 
+const WARNING_COLOR_FALLBACK = '#f3d898';
+const CRITICAL_COLOR_FALLBACK = '#eca7a7';
+
 export class RateLimitWebView {
   public static currentPanel: RateLimitWebView | undefined;
   private readonly _panel: vscode.WebviewPanel;
@@ -113,15 +116,10 @@ export class RateLimitWebView {
     const nonce = this._nonce;
     const widthRules: string[] = [];
     const progressSection = this._renderProgressSection(data, widthRules);
-    const csp = [
-      "default-src 'none';",
-      `img-src ${webview.cspSource};`,
-      `style-src ${webview.cspSource} 'nonce-${nonce}';`,
-      `script-src 'nonce-${nonce}';`
-    ].join(' ');
+    const csp = this._buildCsp(webview, nonce);
     const config = vscode.workspace.getConfiguration('codexRatelimit');
-    const warningColor = sanitizeColor(config.get<string>('color.warningColor', '#f3d898'), '#f3d898');
-    const criticalColor = sanitizeColor(config.get<string>('color.criticalColor', '#eca7a7'), '#eca7a7');
+    const warningColor = sanitizeColor(config.get<string>('color.warningColor', WARNING_COLOR_FALLBACK), WARNING_COLOR_FALLBACK);
+    const criticalColor = sanitizeColor(config.get<string>('color.criticalColor', CRITICAL_COLOR_FALLBACK), CRITICAL_COLOR_FALLBACK);
 
     return `<!DOCTYPE html>
     <html lang="en">
@@ -183,8 +181,8 @@ export class RateLimitWebView {
       const primary = data.primary;
       const resetTimeStr = primary.reset_time.toLocaleString();
       const outdatedStr = primary.outdated ? ' [OUTDATED]' : '';
-      const timePercent = primary.outdated ? 0 : this._clampPercentage(primary.time_percent);
-      const usagePercent = primary.outdated ? 0 : this._clampPercentage(primary.used_percent);
+      const timePercent = this._getDisplayPercentage(primary.time_percent, primary.outdated);
+      const usagePercent = this._getDisplayPercentage(primary.used_percent, primary.outdated);
       const timeText = primary.outdated ? 'N/A' : timePercent.toFixed(1) + '%';
       const usageText = primary.outdated ? 'N/A' : usagePercent.toFixed(1) + '%';
       widthRules.push(`#primary-time-fill { width: ${timePercent}%; }`);
@@ -220,8 +218,8 @@ export class RateLimitWebView {
       const secondary = data.secondary;
       const resetTimeStr = secondary.reset_time.toLocaleString();
       const outdatedStr = secondary.outdated ? ' [OUTDATED]' : '';
-      const timePercent = secondary.outdated ? 0 : this._clampPercentage(secondary.time_percent);
-      const usagePercent = secondary.outdated ? 0 : this._clampPercentage(secondary.used_percent);
+      const timePercent = this._getDisplayPercentage(secondary.time_percent, secondary.outdated);
+      const usagePercent = this._getDisplayPercentage(secondary.used_percent, secondary.outdated);
       const timeText = secondary.outdated ? 'N/A' : timePercent.toFixed(1) + '%';
       const usageText = secondary.outdated ? 'N/A' : usagePercent.toFixed(1) + '%';
       widthRules.push(`#secondary-time-fill { width: ${timePercent}%; }`);
@@ -287,15 +285,26 @@ export class RateLimitWebView {
     return Math.max(0, Math.min(100, value));
   }
 
+  private _getDisplayPercentage(value: number, outdated: boolean): number {
+    if (outdated) {
+      return 0;
+    }
+    return this._clampPercentage(value);
+  }
+
+  private _buildCsp(webview: vscode.Webview, nonce: string): string {
+    return [
+      "default-src 'none';",
+      `img-src ${webview.cspSource};`,
+      `style-src ${webview.cspSource} 'nonce-${nonce}';`,
+      `script-src 'nonce-${nonce}';`
+    ].join(' ');
+  }
+
   private _getErrorHtml(errorMessage: string): string {
     const styleUri = this._panel.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'styles.css'));
     const nonce = this._nonce;
-    const csp = [
-      "default-src 'none';",
-      `img-src ${this._panel.webview.cspSource};`,
-      `style-src ${this._panel.webview.cspSource} 'nonce-${nonce}';`,
-      `script-src 'nonce-${nonce}';`
-    ].join(' ');
+    const csp = this._buildCsp(this._panel.webview, nonce);
     const safeErrorMessage = this._escapeHtml(errorMessage);
 
     return `<!DOCTYPE html>

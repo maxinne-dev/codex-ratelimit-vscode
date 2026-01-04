@@ -1,3 +1,5 @@
+const MAX_COLOR_LENGTH = 50;
+// Supports 3, 6, and 8 digit hex colors (the latter including an alpha channel).
 const HEX_COLOR_PATTERN = /^#(?:[a-fA-F0-9]{3}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$/;
 const RGB_NUMBER = '(?:[01]?\\d?\\d|2[0-4]\\d|25[0-5])';
 const ALPHA_VALUE = '(?:0|0?\\.\\d+|1(?:\\.0+)?)';
@@ -13,7 +15,7 @@ export function sanitizeColor(input: string | undefined, fallback: string): stri
 
   const trimmed = input.trim();
 
-  if (trimmed.length > 50) {
+  if (trimmed.length > MAX_COLOR_LENGTH) {
     return fallback;
   }
 
