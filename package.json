@@ -3,12 +3,12 @@
   "displayName": "Codex Rate Limit Monitor",
   "description": "A VSCode extension for monitoring Codex rate limits",
   "license": "MIT",
-  "version": "0.12.0",
-  "publisher": "xiangz19",
+  "version": "0.13.0",
+  "publisher": "Maxie",
   "icon": "icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/xiangz19/codex-ratelimit-vscode"
+    "url": "https://github.com/maxinne-dev/codex-ratelimit-vscode"
   },
   "engines": {
     "vscode": "^1.96.0"
