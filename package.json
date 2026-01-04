@@ -110,7 +110,29 @@
             "maximum": 3600,
             "description": "How often to refresh the stats (in seconds). Minimum 5 seconds, maximum 1 hour.",
             "scope": "window"
+          },
+          "codexRatelimit.statusBar.showIcon": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show the Codex icon in the status bar.",
+            "scope": "window"
+          },
+          "codexRatelimit.statusBar.showLabel": {
+            "type": "boolean",
+            "default": false,
+            "description": "Show the \"Codex\" label next to the status bar icon.",
+            "scope": "window"
           }
+        }
+      }
+    ],
+    "icons": [
+      {
+        "id": "codex",
+        "description": "Codex logo",
+        "default": {
+          "light": "media/codex-icon-light.svg",
+          "dark": "media/codex-icon-dark.svg"
         }
       }
     ]
