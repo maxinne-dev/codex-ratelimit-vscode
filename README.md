@@ -144,6 +144,10 @@ npm run compile
 # Press F5 in VSCode to launch Extension Development Host
 ```
 
+### Release Automation
+
+Merges to `main` automatically create a version tag (`v<package.json version>`), package the extension with `vsce`, and publish a GitHub release that includes the generated `.vsix` file. Manual runs are available via the "Create Tag and Release" workflow dispatch.
+
 ## Architecture
 
 ```
