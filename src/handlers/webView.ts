@@ -2,11 +2,13 @@ import * as vscode from 'vscode';
 import { RateLimitData } from '../interfaces/types';
 import { getRateLimitData, formatTokenUsage } from '../services/ratelimitParser';
 import { log } from '../services/logger';
+import { sanitizeColor } from '../utils/sanitize';
 
 export class RateLimitWebView {
   public static currentPanel: RateLimitWebView | undefined;
   private readonly _panel: vscode.WebviewPanel;
   private readonly _extensionUri: vscode.Uri;
+  private readonly _nonce: string;
   private _disposables: vscode.Disposable[] = [];
 
   public static createOrShow(extensionUri: vscode.Uri) {
@@ -42,6 +44,7 @@ export class RateLimitWebView {
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     this._panel = panel;
     this._extensionUri = extensionUri;
+    this._nonce = RateLimitWebView._generateNonce();
 
     // Set the webview's initial html content
     this._update();
@@ -106,18 +109,26 @@ export class RateLimitWebView {
 
   private _getHtml(webview: vscode.Webview, data: RateLimitData): string {
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'styles.css'));
+    const nonce = this._nonce;
+    const csp = [
+      "default-src 'none';",
+      `img-src ${webview.cspSource} data:;`,
+      `style-src ${webview.cspSource} 'nonce-${nonce}' 'unsafe-inline';`,
+      `script-src 'nonce-${nonce}';`
+    ].join(' ');
     const config = vscode.workspace.getConfiguration('codexRatelimit');
-    const warningColor = config.get<string>('color.warningColor', '#f3d898');
-    const criticalColor = config.get<string>('color.criticalColor', '#eca7a7');
+    const warningColor = sanitizeColor(config.get<string>('color.warningColor', '#f3d898'), '#f3d898');
+    const criticalColor = sanitizeColor(config.get<string>('color.criticalColor', '#eca7a7'), '#eca7a7');
 
     return `<!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta http-equiv="Content-Security-Policy" content="${csp}">
       <title>Codex Rate Limit Details</title>
       <link href="${styleUri}" rel="stylesheet">
-      <style>
+      <style nonce="${nonce}">
         .progress-fill.usage.medium {
           background-color: ${warningColor} !important;
         }
@@ -142,18 +153,19 @@ export class RateLimitWebView {
 
         <div class="refresh-info">
           Last updated: ${data.current_time.toLocaleString()}<br>
-          <button onclick="refresh()" style="margin-top: 10px; padding: 5px 10px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 3px; cursor: pointer;">
+          <button id="refreshButton" style="margin-top: 10px; padding: 5px 10px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 3px; cursor: pointer;">
             🔄 Refresh
           </button>
         </div>
       </div>
 
-      <script>
+      <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
 
-        function refresh() {
+        const refreshButton = document.getElementById('refreshButton');
+        refreshButton?.addEventListener('click', () => {
           vscode.postMessage({ command: 'refresh' });
-        }
+        });
       </script>
     </body>
     </html>`;
@@ -266,34 +278,73 @@ export class RateLimitWebView {
 
   private _getErrorHtml(errorMessage: string): string {
     const styleUri = this._panel.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'styles.css'));
+    const nonce = this._nonce;
+    const csp = [
+      "default-src 'none';",
+      `img-src ${this._panel.webview.cspSource} data:;`,
+      `style-src ${this._panel.webview.cspSource} 'nonce-${nonce}' 'unsafe-inline';`,
+      `script-src 'nonce-${nonce}';`
+    ].join(' ');
+    const safeErrorMessage = this._escapeHtml(errorMessage);
 
     return `<!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta http-equiv="Content-Security-Policy" content="${csp}">
       <title>Codex Rate Limit Details - Error</title>
       <link href="${styleUri}" rel="stylesheet">
+      <style nonce="${nonce}"></style>
     </head>
     <body>
       <div class="container">
         <div class="error-state">
           <h2>⚠️ Error</h2>
-          <p>${errorMessage}</p>
-          <button onclick="refresh()" style="margin-top: 10px; padding: 5px 10px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 3px; cursor: pointer;">
+          <p>${safeErrorMessage}</p>
+          <button id="errorRefreshButton" style="margin-top: 10px; padding: 5px 10px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 3px; cursor: pointer;">
             🔄 Try Again
           </button>
         </div>
       </div>
 
-      <script>
+      <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
 
-        function refresh() {
+        const errorRefreshButton = document.getElementById('errorRefreshButton');
+        errorRefreshButton?.addEventListener('click', () => {
           vscode.postMessage({ command: 'refresh' });
-        }
+        });
       </script>
     </body>
     </html>`;
+  }
+
+  private _escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, (char) => {
+      switch (char) {
+        case '&':
+          return '&amp;';
+        case '<':
+          return '&lt;';
+        case '>':
+          return '&gt;';
+        case '"':
+          return '&quot;';
+        case '\'':
+          return '&#39;';
+        default:
+          return char;
+      }
+    });
+  }
+
+  private static _generateNonce(): string {
+    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let nonce = '';
+    for (let i = 0; i < 16; i++) {
+      nonce += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    return nonce;
   }
 }

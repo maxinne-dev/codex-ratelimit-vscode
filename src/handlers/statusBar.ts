@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { RateLimitData } from '../interfaces/types';
 import { log } from '../services/logger';
+import { sanitizeColor } from '../utils/sanitize';
 
 let statusBarItem: vscode.StatusBarItem;
 
@@ -20,9 +21,9 @@ export function getStatusBarColor(percentage: number): string | vscode.ThemeColo
   }
 
   const warningThreshold = config.get<number>('color.warningThreshold', 70);
-  const warningColor = config.get<string>('color.warningColor', '#f3d898');
+  const warningColor = sanitizeColor(config.get<string>('color.warningColor', '#f3d898'), '#f3d898');
   const criticalThreshold = config.get<number>('color.criticalThreshold', 90);
-  const criticalColor = config.get<string>('color.criticalColor', '#eca7a7');
+  const criticalColor = sanitizeColor(config.get<string>('color.criticalColor', '#eca7a7'), '#eca7a7');
 
   if (percentage >= criticalThreshold) {
     return criticalColor;
@@ -56,9 +57,9 @@ function createProgressBar(percentage: number, type: 'usage' | 'time', outdated:
     // Usage color based on threshold
     const config = vscode.workspace.getConfiguration('codexRatelimit');
     const warningThreshold = config.get<number>('color.warningThreshold', 70);
-    const warningColor = config.get<string>('color.warningColor', '#f3d898');
+    const warningColor = sanitizeColor(config.get<string>('color.warningColor', '#f3d898'), '#f3d898');
     const criticalThreshold = config.get<number>('color.criticalThreshold', 90);
-    const criticalColor = config.get<string>('color.criticalColor', '#eca7a7');
+    const criticalColor = sanitizeColor(config.get<string>('color.criticalColor', '#eca7a7'), '#eca7a7');
 
     if (percentage >= criticalThreshold) {
       fillColor = criticalColor;
