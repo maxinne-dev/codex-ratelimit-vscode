@@ -3,7 +3,7 @@
   "displayName": "Codex Rate Limit Monitor",
   "description": "A VSCode extension for monitoring Codex rate limits",
   "license": "MIT",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "publisher": "Maxie",
   "icon": "icon.png",
   "repository": {
@@ -131,8 +131,8 @@
         "id": "codex",
         "description": "Codex logo",
         "default": {
-          "light": "media/codex-icon-light.svg",
-          "dark": "media/codex-icon-dark.svg"
+          "light": "media/openai_dark.png",
+          "dark": "media/openai_light.png"
         }
       }
     ]
